@@ -2,7 +2,9 @@
 This is another PID controller for the Gaggia Classic (Pro) espresso portafilter machine. I didn't want a chunky box hanging out of my otherwise clean coffee machine setup, so I made a PID controller using the ESP8266, MAX6675, and an SSR controlled by a polished web interface optimized for mobile devices.
 All the parts can be comfortably accommodated within the Gaggia, so it looks just like a stock machine from the outside. It can also still be operated manually without consulting the web interface. The mod is always easily reversible without leaving any traces.
 
-![](https://raw.githubusercontent.com/da-luggas/gaggia-pid-presto/main/screenshot.jpeg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/da-luggas/gaggia-pid-presto/main/screenshot.jpeg" width="350">
+</p>
 
 ## Functionality
 - [ ] Check the current temperature of the boiler
