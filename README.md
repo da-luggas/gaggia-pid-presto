@@ -42,12 +42,18 @@ We are going to use esptool to flash the binary to your ESP8266
 2. Install Python on your machine (Necessary on [Windows](https://www.python.org/downloads/windows/), macOS and Linux usually come with Python installed by default)
 3. Install esptool by running `pip install esptool` in your command line
 4. Connect the ESP8266 to your computer and find the serial port
+
 	**Linux**: run `ls /dev/ttyUSB*` in your terminal
+   
 	**macOS**: run `ls /dev/tty.*` in your terminal
+   
 	**Windows**: Device Manager > Ports (COM & LPT) > Right click on device > Properties > Port Settings
+   
 	Please note that on Windows, you might also have to install the [USB Drivers for the NodeMCU](https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers?tab=downloads)
-5. Flash the binary:
+6. Flash the binary:
+
 	`esptool.py -chip esp8266 erase_flash`
+
 	`exptool.py -chip esp8266 -port <PORT_FROM_STEP_4> write_flash -z 0x1000 /path/to/your/firmware.bin`
 
 ### First start
