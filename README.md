@@ -57,3 +57,65 @@ After you have set up everything and turned on your ESP8266 for the first time, 
 - [ ] Progressive Web App (so that the website can be pinned to the home screen)
 - [ ] Automatic shot timer using solenoid
 - [ ] Adjust website colors to fit better to the topic of coffee
+
+---
+
+## Contributing to the Project
+
+I welcome contributions from coffee enthusiasts and tech wizards alike! If you're interested in improving the project, here's how you can contribute:
+
+### Getting Started
+
+1. **Fork the Repository**: Start by forking the repository to your own GitHub account. This creates a personal copy for you to work on.
+
+2. **Clone the Forked Repository**: Clone your forked repository to your local machine. This allows you to work on the project in your own development environment.
+
+   ```bash
+   git clone https://github.com/da-luggas/gaggia-pid-presto.git
+   cd gaggia-pid-presto
+   ```
+
+### Making Changes
+
+1. **Create a New Branch**: Before you start making changes, create a new branch. This helps in isolating your changes from the main project.
+
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+2. **Make Your Changes**: Implement your feature, fix a bug, or make other changes. Ensure your code adheres to the existing style of the project to maintain consistency.
+
+3. **Commit Your Changes**: Once you're satisfied with your changes, commit them to your branch. Write clear, concise commit messages to explain your changes.
+
+   ```bash
+   git commit -am "Add a concise and clear description of your changes"
+   ```
+
+### Submitting Your Changes
+
+1. **Push to GitHub**: Push your branch with the changes to your fork on GitHub.
+
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+
+2. **Create a Pull Request**: Go to the original repository on GitHub. You'll see a prompt to create a pull request from your new branch. Fill in the details, explaining the purpose of your changes.
+
+3. **Code Review**: Wait for the project maintainer to review your changes. Be open to feedback and be ready to make revisions if requested.
+
+### Final Steps
+
+- Once your pull request is approved and merged, your contributions will be part of the project! 
+- Don't forget to pull the changes from the original repository to keep your fork up to date.
+
+   ```bash
+   git checkout main
+   git pull upstream main
+   git push origin main
+   ```
+
+### Thank You!
+
+Your contributions play a vital role in the continuous development of this project. Whether it's a minor bug fix, a feature enhancement, or a documentation improvement, every contribution is valuable. Please have a look at the planned features section of this README for some inspirations what could be a good addition to the project.
+
+Happy coding, and enjoy your enhanced coffee experience!
