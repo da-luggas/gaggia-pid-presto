@@ -61,8 +61,10 @@ After you have set up everything and turned on your ESP8266 for the first time, 
 
 ## Planned features
 - [ ] Progressive Web App (so that the website can be pinned to the home screen)
+- [ ] Heatup timer
+- [ ] Autotuning of PID parameters
 - [ ] Automatic shot timer using solenoid
-- [ ] Adjust website colors to fit better to the topic of coffee
+- [ ] Adjust website colors to better fit the topic of coffee
 
 ---
 
