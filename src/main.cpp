@@ -133,15 +133,6 @@ String buildWebsite()
       "    }"
       "</script>";
 
-  String loadingScript =
-      "<script>"
-      "    window.onload = function() {"
-      "        setTimeout(function() {"
-      "            document.getElementById('loading').style.display = 'none';"
-      "        }, 900000);" // 15 minutes in milliseconds
-      "    };"
-      "</script>";
-
   String htmlPage =
       "<!doctype html>"
       "<head>"
@@ -151,11 +142,10 @@ String buildWebsite()
       "    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css'>"
       "    <link rel='apple-touch-icon' href='https://raw.githubusercontent.com/da-luggas/gaggia-pid-presto/main/icon.png'>"
       "    <title>Gaggia Classic</title>" +
-      updateScript + changeScript + loadingScript +
+      updateScript + changeScript +
       "</head>"
       "<body>"
       "    <main class='container'>"
-      "        <a id='loading' aria-busy='true'>Heating Up...</a>"
       "        <hgroup>"
       "            <h2>Gaggia Classic</h2>"
       "            <p>" +
