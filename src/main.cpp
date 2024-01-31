@@ -6,6 +6,7 @@
 #include <max6675.h>
 #include <PID_v1.h>
 #include <EEPROM.h>
+#include <pidautotuner.h>
 
 // Define addresses for EEPROM
 const int ADDR_BREW_TEMP = 0;
@@ -15,8 +16,7 @@ const int ADDR_KI = 24;
 const int ADDR_KD = 32;
 const int EEPROM_INIT_ADDR = 40;
 const int EEPROM_SIZE = 48;
-const byte EEPROM_INIT_FLAG = 0x42;
-
+const byte EEPROM_INIT_FLAG = 0x15;
 
 // Define thermocouple and relay pin numbers
 const int THERMO_DO_PIN = 12;
@@ -25,20 +25,19 @@ const int THERMO_CLK_PIN = 14;
 const int RELAY_PIN = 16;
 
 // Define Variables we'll be connecting to
-double Setpoint, Input, Output;
-const double MaxBoilerTemp = 250;
+double Setpoint, Input, Output, Kp, Ki, Kd;
+const double MaxBoilerTemp = 170;
 
 // Define variables holding user configured temperatures
-double brewTemp = 105, steamTemp = 170;
-
-// Specify the links and initial tuning parameters
-double Kp = 45.0, Ki = 2.0, Kd = 250;
-PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
+double brewTemp, steamTemp;
 
 // Set time variables for non-blocking delays
-unsigned long WindowSize = 5000;
+unsigned long WindowSize = 2000;
 unsigned long windowStartTime;
 unsigned long lastTempReadTime = 0;
+
+// Initialize PID controller
+PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 // Initialize thermocouple
 MAX6675 thermocouple(THERMO_CLK_PIN, THERMO_CS_PIN, THERMO_DO_PIN);
@@ -50,7 +49,8 @@ ESP8266WebServer server(80);
 // HELPER FUNCTIONS //
 //////////////////////
 
-void writeToEEPROM() {
+void writeToEEPROM()
+{
   EEPROM.put(ADDR_BREW_TEMP, brewTemp);
   EEPROM.put(ADDR_STEAM_TEMP, steamTemp);
   EEPROM.put(ADDR_KP, Kp);
@@ -59,7 +59,7 @@ void writeToEEPROM() {
   EEPROM.commit();
 }
 
-void controlRelay()
+void softPWM()
 {
   // Safety shutdown when temperature is too high
   if (Input > MaxBoilerTemp)
@@ -74,10 +74,12 @@ void controlRelay()
   { // Time to shift the Relay Window
     windowStartTime += WindowSize;
   }
-  if (Output > millis() - windowStartTime) {
+  if (Output > millis() - windowStartTime)
+  {
     digitalWrite(RELAY_PIN, HIGH);
   }
-  else {
+  else
+  {
     digitalWrite(RELAY_PIN, LOW);
   }
 }
@@ -101,94 +103,114 @@ String buildWebsite()
   String mode = (Setpoint == steamTemp) ? "Steaming" : "Brewing";
   String checkboxChecked = (Setpoint == steamTemp) ? "checked" : "";
   String updateScript =
-  "<script>"
-  "    function updateTemperature() {"
-  "        var xhttp = new XMLHttpRequest();"
-  "        xhttp.onreadystatechange = function() {"
-  "            if (this.readyState == 4 && this.status == 200) {"
-  "                document.getElementById('currentTemp').innerHTML = this.response + ' °C';"
-  "                document.getElementById('progress').value = Number(this.response);"
-  "            };"
-  "        };"
-  "        xhttp.open('GET', '/getCurrentTemp', true);"
-  "        xhttp.send();"
-  "    }"
-  "    setInterval(updateTemperature, 1000);"
-  "</script>";
+      "<script>"
+      "    function updateTemperature() {"
+      "        var xhttp = new XMLHttpRequest();"
+      "        xhttp.onreadystatechange = function() {"
+      "            if (this.readyState == 4 && this.status == 200) {"
+      "                document.getElementById('currentTemp').innerHTML = this.response + ' °C';"
+      "                document.getElementById('progress').value = Number(this.response);"
+      "            };"
+      "        };"
+      "        xhttp.open('GET', '/getCurrentTemp', true);"
+      "        xhttp.send();"
+      "    }"
+      "    setInterval(updateTemperature, 1000);"
+      "</script>";
 
   String changeScript =
-  "<script>"
-  "    function changeMode() {"
-  "       var mode = document.getElementById('steamMode').checked ? 1 : 0;"
-  "       var xhttp = new XMLHttpRequest();"
-  "        xhttp.onreadystatechange = function() {"
-  "            if (this.readyState == 4 && this.status == 200) {"
-  "                location.reload();"
-  "            };"
-  "        };"
-  "       xhttp.open('GET', '/changeMode?steamMode=' + mode, true);"
-  "       xhttp.send();"
-  "    }"
-  "</script>";
+      "<script>"
+      "    function changeMode() {"
+      "       var mode = document.getElementById('steamMode').checked ? 1 : 0;"
+      "       var xhttp = new XMLHttpRequest();"
+      "        xhttp.onreadystatechange = function() {"
+      "            if (this.readyState == 4 && this.status == 200) {"
+      "                location.reload();"
+      "            };"
+      "        };"
+      "       xhttp.open('GET', '/changeMode?steamMode=' + mode, true);"
+      "       xhttp.send();"
+      "    }"
+      "</script>";
+
+  String loadingScript =
+      "<script>"
+      "    window.onload = function() {"
+      "        setTimeout(function() {"
+      "            document.getElementById('loading').style.display = 'none';"
+      "        }, 900000);" // 15 minutes in milliseconds
+      "    };"
+      "</script>";
 
   String htmlPage =
-  "<!doctype html>"
-  "<head>"
-  "    <meta charset='utf-8'>"
-  "    <meta name='viewport' content='width=device-width, initial-scale=1'>"
-  "    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css'>"
-  "    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css'>"
-  "    <title>Gaggia Classic</title>"
-  + updateScript + changeScript + 
-  "</head>"
-  "<body>"
-  "    <main class='container'>"
-  "        <hgroup>"
-  "            <h2>Gaggia Classic</h2>"
-  "            <p>" + mode +  " Temperature: <strong>" + String(int(Setpoint)) + " °C</strong></p>"
-  "        </hgroup>"
-  "        <h1 id='currentTemp' style='margin-bottom: 0'>" + String(int(Input)) + " °C</h1>"
-  "        <progress id='progress' value='" + String(int(Input)) + "' max='" + String(int(Setpoint)) + "'></progress>"
-  "        <label for='steamMode'>"
-  "            <input type='checkbox' id='steamMode' name='steamMode' role='switch' " + checkboxChecked + " onChange='changeMode()'>"
-  "            <i class='bi-wind'></i> Steam Mode"
-  "        </label>"
-  "        <h1></h1>"
-  "        <details>"
-  "            <summary>Temperature Settings</summary>"
-  "            <form action='/setTemps' method='GET'>"
-  "            <label for='brewTemp'>"
-  "                Brewing Temperature (°C)"
-  "                <input type='text' id='brewTemp' name='brewTemp' placeholder='" + String(int(brewTemp)) + "'>"
-  "            </label>"
-  "            <label for='steamTemp'>"
-  "                Steaming Temperature (°C)"
-  "                <input type='text' id='steamTemp' name='steamTemp' placeholder='" + String(int(steamTemp)) + "'>"
-  "            </label>"
-  "            <button type='submit'>Save</button>"
-  "            </form>"
-  "        </details>"
-  "        <details>"
-  "            <summary>PID Settings</summary>"
-  "            <form action='/setPID' method='GET'>"
-  "            <label for='Kp'>"
-  "                Kp"
-  "                <input type='text' id='Kp' name='Kp' placeholder='" + String(Kp) + "'>"
-  "            </label>"
-  "            <label for='Ki'>"
-  "                Ki"
-  "                <input type='text' id='Ki' name='Ki' placeholder='" + String(Ki) + "'>"
-  "            </label>"
-  "            <label for='Kd'>"
-  "                Kd"
-  "                <input type='text' id='Kd' name='Kd' placeholder='" + String(Kd) + "'>"
-  "            </label>"
-  "            <button type='submit'>Save</button>"
-  "            </form>"
-  "        </details>"
-  "    </main>"
-  "</body>"
-  "</html>";
+      "<!doctype html>"
+      "<head>"
+      "    <meta charset='utf-8'>"
+      "    <meta name='viewport' content='width=device-width, initial-scale=1'>"
+      "    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css'>"
+      "    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css'>"
+      "    <link rel='apple-touch-icon' href='https://raw.githubusercontent.com/da-luggas/gaggia-pid-presto/main/icon.png'>"
+      "    <title>Gaggia Classic</title>" +
+      updateScript + changeScript + loadingScript +
+      "</head>"
+      "<body>"
+      "    <main class='container'>"
+      "        <a id='loading' aria-busy='true'>Heating Up...</a>"
+      "        <hgroup>"
+      "            <h2>Gaggia Classic</h2>"
+      "            <p>" +
+      mode + " Temperature: <strong>" + String(int(Setpoint)) + " °C</strong></p>"
+                                                                "        </hgroup>"
+                                                                "        <h1 id='currentTemp' style='margin-bottom: 0'>" +
+      String(int(Input)) + " °C</h1>"
+                           "        <progress id='progress' value='" +
+      String(int(Input)) + "' max='" + String(int(Setpoint)) + "'></progress>"
+                                                               "        <label for='steamMode'>"
+                                                               "            <input type='checkbox' id='steamMode' name='steamMode' role='switch' " +
+      checkboxChecked + " onChange='changeMode()'>"
+                        "            <i class='bi-wind'></i> Steam Mode"
+                        "        </label>"
+                        "        <h1></h1>"
+                        "        <details>"
+                        "            <summary>Temperature Settings</summary>"
+                        "            <form action='/setTemps' method='GET'>"
+                        "            <label for='brewTemp'>"
+                        "                Brewing Temperature (°C)"
+                        "                <input type='text' id='brewTemp' name='brewTemp' placeholder='" +
+      String(int(brewTemp)) + "'>"
+                              "            </label>"
+                              "            <label for='steamTemp'>"
+                              "                Steaming Temperature (°C)"
+                              "                <input type='text' id='steamTemp' name='steamTemp' placeholder='" +
+      String(int(steamTemp)) + "'>"
+                               "            </label>"
+                               "            <button type='submit'>Save</button>"
+                               "            </form>"
+                               "        </details>"
+                               "        <details>"
+                               "            <summary>PID Settings</summary>"
+                               "            <form action='/setPID' method='GET'>"
+                               "            <label for='Kp'>"
+                               "                Kp"
+                               "                <input type='text' id='Kp' name='Kp' placeholder='" +
+      String(Kp) + "'>"
+                   "            </label>"
+                   "            <label for='Ki'>"
+                   "                Ki"
+                   "                <input type='text' id='Ki' name='Ki' placeholder='" +
+      String(Ki) + "'>"
+                   "            </label>"
+                   "            <label for='Kd'>"
+                   "                Kd"
+                   "                <input type='text' id='Kd' name='Kd' placeholder='" +
+      String(Kd) + "'>"
+                   "            </label>"
+                   "            <button type='submit'>Save</button>"
+                   "            </form>"
+                   "        </details>"
+                   "    </main>"
+                   "</body>"
+                   "</html>";
   return htmlPage;
 }
 
@@ -243,19 +265,22 @@ void changeMode()
 
 void setPID()
 {
-  if (server.hasArg("Kp") && server.arg("Kp") != "") {
+  if (server.hasArg("Kp") && server.arg("Kp") != "")
+  {
     Kp = server.arg("Kp").toDouble();
   }
-  if (server.hasArg("Ki") && server.arg("Ki") != "") {
+  if (server.hasArg("Ki") && server.arg("Ki") != "")
+  {
     Ki = server.arg("Ki").toDouble();
   }
-  if (server.hasArg("Kd") && server.arg("Kd") != "") {
+  if (server.hasArg("Kd") && server.arg("Kd") != "")
+  {
     Kd = server.arg("Kd").toDouble();
   }
 
   myPID.SetTunings(Kp, Ki, Kd);
   writeToEEPROM();
-  
+
   server.send(200, "text/html", buildWebsite());
 }
 
@@ -276,20 +301,20 @@ void setup()
   byte initFlag = 0;
   EEPROM.get(EEPROM_INIT_ADDR, initFlag);
 
-  if (initFlag != EEPROM_INIT_FLAG) {
+  // Variable to trigger autotuning after system initialized for the first time
+  bool runAutoTune = false;
+
+  if (initFlag != EEPROM_INIT_FLAG)
+  {
     // EEPROM is not initialized or data is corrupted, so set default values
+    brewTemp = 105, steamTemp = 140;
 
-    brewTemp = 105;
-    steamTemp = 170;
-    Kp = 2.4;
-    Ki = 45.0;
-    Kd = 10.0;
-
-    writeToEEPROM();
-
+    runAutoTune = true;
     EEPROM.put(EEPROM_INIT_ADDR, EEPROM_INIT_FLAG);
     EEPROM.commit();
-  } else {
+  }
+  else
+  {
     // Read the stored values
     EEPROM.get(ADDR_BREW_TEMP, brewTemp);
     EEPROM.get(ADDR_STEAM_TEMP, steamTemp);
@@ -329,8 +354,62 @@ void setup()
   // Initialize the variables we're linked to
   Setpoint = brewTemp;
 
+  // Perform Autotuning if first boot
+  if (runAutoTune)
+  {
+    PIDAutotuner tuner = PIDAutotuner();
+
+    tuner.setTargetInputValue(Setpoint);
+    tuner.setLoopInterval(250 * 1000); // 250ms in microseconds
+    tuner.setOutputRange(0, WindowSize);
+    tuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
+
+    tuner.startTuningLoop(micros());
+
+    long microseconds;
+    while (!tuner.isFinished())
+    {
+
+      // This loop must run at the same speed as the PID control loop being tuned
+      long prevMicroseconds = microseconds;
+      microseconds = micros();
+
+      // Get input value here (temperature, encoder position, velocity, etc)
+      double input = thermocouple.readCelsius();
+
+      // Call tunePID() with the input value and current time in microseconds
+      double output = tuner.tunePID(input, microseconds);
+
+      // Set the output - tunePid() will return values within the range configured
+      // by setOutputRange(). Don't change the value or the tuning results will be
+      // incorrect.
+      Output = output;
+      softPWM();
+
+      // This loop must run at the same speed as the PID control loop being tuned
+      while ((micros() - microseconds) < (250 * 1000))
+        delayMicroseconds(1);
+    }
+
+    // Turn the output off
+    Output = 0;
+    softPWM();
+
+    // Get PID gains - set your PID controller's gains to these
+    double Kp = tuner.getKp();
+    double Ki = tuner.getKi();
+    double Kd = tuner.getKd();
+
+    myPID.SetTunings(Kp, Ki, Kd);
+
+    writeToEEPROM();
+  }
+
   // Tell the PID to range between 0 and the full window size
   myPID.SetOutputLimits(0, WindowSize);
+
+  // Set sample time to maximum of MAX6675 (250ms)
+  myPID.SetSampleTime(250);
 
   // Turn the PID on
   myPID.SetMode(AUTOMATIC);
@@ -339,6 +418,6 @@ void setup()
 void loop()
 {
   readThermocouple();
-  controlRelay();
+  softPWM();
   server.handleClient();
 }
