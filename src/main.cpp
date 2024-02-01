@@ -140,6 +140,15 @@ String buildWebsite()
       "    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css'>"
       "    <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css'>"
       "    <link rel='apple-touch-icon' href='https://raw.githubusercontent.com/da-luggas/gaggia-pid-presto/main/icon.png'>"
+      "    <style>"
+      "        [data-theme='light'],"
+      "        :root:not([data-theme='dark']) {"
+      "          --primary: #846C5B;"
+      "          --primary-hover: #846C5B;"
+      "          --primary-focus: rgba(132, 108, 91, 0.25);"
+      "          --primary-inverse: #FFF;"
+      "        }"
+      "    </style>"
       "    <title>Gaggia Classic</title>" +
       updateScript + changeScript +
       "</head>"
