@@ -16,7 +16,7 @@ const int ADDR_KI = 24;
 const int ADDR_KD = 32;
 const int EEPROM_INIT_ADDR = 40;
 const int EEPROM_SIZE = 48;
-const byte EEPROM_INIT_FLAG = 0x15;
+const byte EEPROM_INIT_FLAG = 0x39;
 
 // Define thermocouple and relay pin numbers
 const int THERMO_DO_PIN = 12;
@@ -24,20 +24,21 @@ const int THERMO_CS_PIN = 15;
 const int THERMO_CLK_PIN = 14;
 const int RELAY_PIN = 16;
 
+// Define variables holding user configured temperatures
+double brewTemp = 105, steamTemp = 140;
+
 // Define Variables we'll be connecting to
-double Setpoint, Input, Output, Kp, Ki, Kd;
+double Setpoint = brewTemp, Input, Output;
 const double MaxBoilerTemp = 170;
 
-// Define variables holding user configured temperatures
-double brewTemp, steamTemp;
+// Specify the links and initial tuning parameters
+double Kp = 1, Ki = 1, Kd = 1;
+PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 // Set time variables for non-blocking delays
 unsigned long WindowSize = 2000;
 unsigned long windowStartTime;
 unsigned long lastTempReadTime = 0;
-
-// Initialize PID controller
-PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 // Initialize thermocouple
 MAX6675 thermocouple(THERMO_CLK_PIN, THERMO_CS_PIN, THERMO_DO_PIN);
@@ -59,7 +60,7 @@ void writeToEEPROM()
   EEPROM.commit();
 }
 
-void softPWM()
+void controlRelay()
 {
   // Safety shutdown when temperature is too high
   if (Input > MaxBoilerTemp)
@@ -67,8 +68,6 @@ void softPWM()
     digitalWrite(RELAY_PIN, LOW);
     return;
   }
-
-  myPID.Compute();
   // Turn the output pin on/off based on pid output
   if (millis() - windowStartTime > WindowSize)
   { // Time to shift the Relay Window
@@ -285,35 +284,16 @@ void notFound()
 
 void setup()
 {
+  Serial.begin(9600);
   // Read saved values from EEPROM
   EEPROM.begin(EEPROM_SIZE);
 
   byte initFlag = 0;
   EEPROM.get(EEPROM_INIT_ADDR, initFlag);
 
-  // Variable to trigger autotuning after system initialized for the first time
-  bool runAutoTune = false;
-
-  if (initFlag != EEPROM_INIT_FLAG)
-  {
-    // EEPROM is not initialized or data is corrupted, so set default values
-    brewTemp = 105, steamTemp = 140;
-
-    runAutoTune = true;
-    EEPROM.put(EEPROM_INIT_ADDR, EEPROM_INIT_FLAG);
-    EEPROM.commit();
-  }
-  else
-  {
-    // Read the stored values
-    EEPROM.get(ADDR_BREW_TEMP, brewTemp);
-    EEPROM.get(ADDR_STEAM_TEMP, steamTemp);
-    EEPROM.get(ADDR_KP, Kp);
-    EEPROM.get(ADDR_KI, Ki);
-    EEPROM.get(ADDR_KD, Kd);
-
-    myPID.SetTunings(Kp, Ki, Kd);
-  }
+  // Set relay pin to low initially
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
 
   // WiFiManager
   WiFiManager wifiManager;
@@ -330,75 +310,77 @@ void setup()
   server.on("/setPID", setPID);
   server.onNotFound(notFound);
 
-  server.begin();
-
-  // Set relay pin to low initially
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);
-
   // Wait for MAX chip to stabilize
-  delay(500);
+  delay(2000);
 
   windowStartTime = millis();
 
-  // Initialize the variables we're linked to
-  Setpoint = brewTemp;
-
-  // Perform Autotuning if first boot
-  if (runAutoTune)
+  if (initFlag != EEPROM_INIT_FLAG)
   {
+    // EEPROM is not initialized or data is corrupted, so set default values
+
+    unsigned long lastAutotuneTime = 0;
+
     PIDAutotuner tuner = PIDAutotuner();
 
-    tuner.setTargetInputValue(Setpoint);
-    tuner.setLoopInterval(250 * 1000); // 250ms in microseconds
-    tuner.setOutputRange(0, WindowSize);
+    tuner.setTargetInputValue(brewTemp); // Example target, adjust as needed
+    tuner.setLoopInterval(250 * 1000);   // Loop interval in microseconds
+    tuner.setOutputRange(0, WindowSize); // Set the output range
     tuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
 
     tuner.startTuningLoop(micros());
 
-    long microseconds;
     while (!tuner.isFinished())
     {
+      unsigned long currentMicros = micros();
 
-      // This loop must run at the same speed as the PID control loop being tuned
-      long prevMicroseconds = microseconds;
-      microseconds = micros();
+      // Ensure the loop runs every 250ms
+      if (currentMicros - lastAutotuneTime >= (250 * 1000))
+      {
+        lastAutotuneTime = currentMicros;
 
-      // Get input value here (temperature, encoder position, velocity, etc)
-      double input = thermocouple.readCelsius();
+        // Read temperature
+        Input = thermocouple.readCelsius();
 
-      // Call tunePID() with the input value and current time in microseconds
-      double output = tuner.tunePID(input, microseconds);
+        // Tune PID
+        Output = tuner.tunePID(Input, currentMicros);
 
-      // Set the output - tunePid() will return values within the range configured
-      // by setOutputRange(). Don't change the value or the tuning results will be
-      // incorrect.
-      Output = output;
-      softPWM();
+        // Set output
+        controlRelay();
+      }
 
-      // This loop must run at the same speed as the PID control loop being tuned
-      while ((micros() - microseconds) < (250 * 1000))
-        delayMicroseconds(1);
+      yield();
     }
+    digitalWrite(RELAY_PIN, LOW); // Turn off the output
 
-    // Turn the output off
-    Output = 0;
-    softPWM();
-
-    // Get PID gains - set your PID controller's gains to these
-    double Kp = tuner.getKp();
-    double Ki = tuner.getKi();
-    double Kd = tuner.getKd();
-
+    // Store the tuned PID values
+    Kp = tuner.getKp();
+    Ki = tuner.getKi();
+    Kd = tuner.getKd();
     myPID.SetTunings(Kp, Ki, Kd);
 
     writeToEEPROM();
+
+    EEPROM.put(EEPROM_INIT_ADDR, EEPROM_INIT_FLAG);
+    EEPROM.commit();
   }
+  else
+  {
+    // Read the stored values
+    EEPROM.get(ADDR_BREW_TEMP, brewTemp);
+    EEPROM.get(ADDR_STEAM_TEMP, steamTemp);
+    EEPROM.get(ADDR_KP, Kp);
+    EEPROM.get(ADDR_KI, Ki);
+    EEPROM.get(ADDR_KD, Kd);
+
+    myPID.SetTunings(Kp, Ki, Kd);
+  }
+
+  server.begin(); // Makes web server available
 
   // Tell the PID to range between 0 and the full window size
   myPID.SetOutputLimits(0, WindowSize);
 
-  // Set sample time to maximum of MAX6675 (250ms)
   myPID.SetSampleTime(250);
 
   // Turn the PID on
@@ -408,6 +390,7 @@ void setup()
 void loop()
 {
   readThermocouple();
-  softPWM();
+  myPID.Compute();
+  controlRelay();
   server.handleClient();
 }
