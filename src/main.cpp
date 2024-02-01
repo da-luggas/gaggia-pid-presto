@@ -16,7 +16,7 @@ const int ADDR_KI = 24;
 const int ADDR_KD = 32;
 const int EEPROM_INIT_ADDR = 40;
 const int EEPROM_SIZE = 48;
-const byte EEPROM_INIT_FLAG = 0x39;
+byte EEPROM_INIT_FLAG = 0x39;
 
 // Define thermocouple and relay pin numbers
 const int THERMO_DO_PIN = 12;
@@ -132,6 +132,27 @@ String buildWebsite()
       "    }"
       "</script>";
 
+  String timerScript =
+    "<script>"
+    "    function updateCountdown() {"
+    "        const heatupDuration = 15 * 60 * 1000;"
+    "        fetch('/getCurrentMillis')"
+    "            .then(response => response.text())"
+    "            .then(currentMillis => {"
+    "                const elapsedMillis = parseInt(currentMillis, 10);"
+    "                if (elapsedMillis >= heatupDuration) {"
+    "                    document.getElementById('loading').style.display = 'none';"
+    "                } else {"
+    "                    const timeLeft = heatupDuration - elapsedMillis;"
+    "                    const minutesLeft = Math.floor(timeLeft / 60000);"
+    "                    document.getElementById('loading').textContent = `Heating Up... (${minutesLeft} min left)`;"
+    "                }"
+    "            })"
+    "    }"
+    "    setInterval(updateCountdown, 10000);"
+    "    updateCountdown();"
+    "</script>";
+
   String htmlPage =
       "<!doctype html>"
       "<head>"
@@ -150,10 +171,11 @@ String buildWebsite()
       "        }"
       "    </style>"
       "    <title>Gaggia Classic</title>" +
-      updateScript + changeScript +
+      updateScript + changeScript + timerScript +
       "</head>"
       "<body>"
       "    <main class='container'>"
+      "        <a id='loading' aria-busy='true'>Heating Up...</a>"
       "        <hgroup>"
       "            <h2>Gaggia Classic</h2>"
       "            <p>" +
@@ -203,6 +225,8 @@ String buildWebsite()
                    "                <input type='text' id='Kd' name='Kd' placeholder='" +
       String(Kd) + "'>"
                    "            </label>"
+                   "            <a href='/autotune' role='button' class='outline' style='display:block'>Rerun Autotune</a>"
+                   "            <small>When pressed, autotune will run again on the next boot. The process takes around 10 min. During that time, the web interface will not be available.<br /><br /></small>"
                    "            <button type='submit'>Save</button>"
                    "            </form>"
                    "        </details>"
@@ -220,6 +244,11 @@ void onConnect()
 void getCurrentTemp()
 {
   server.send(200, "text/plain", String(int(Input)));
+}
+
+void getCurrentMillis()
+{
+  server.send(200, "text/plain", String(millis()));
 }
 
 void setTemps()
@@ -258,6 +287,15 @@ void changeMode()
       Setpoint = brewTemp;
     }
   }
+  server.send(200, "text/html", buildWebsite());
+}
+
+void manualAutotune()
+{
+  EEPROM_INIT_FLAG++;
+  EEPROM.put(EEPROM_INIT_ADDR, EEPROM_INIT_FLAG);
+  EEPROM.commit();
+
   server.send(200, "text/html", buildWebsite());
 }
 
@@ -317,6 +355,8 @@ void setup()
   server.on("/changeMode", changeMode);
   server.on("/getCurrentTemp", getCurrentTemp);
   server.on("/setPID", setPID);
+  server.on("/autotune", manualAutotune);
+  server.on("/getCurrentMillis", getCurrentMillis);
   server.onNotFound(notFound);
 
   // Wait for MAX chip to stabilize
