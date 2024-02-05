@@ -25,7 +25,7 @@ const int THERMO_CLK_PIN = 14;
 const int RELAY_PIN = 16;
 
 // Define variables holding user configured temperatures
-double brewTemp = 105, steamTemp = 140;
+double brewTemp = 105, steamTemp = 170;
 
 // Define Variables we'll be connecting to
 double Setpoint = brewTemp, Input, Output;
@@ -372,9 +372,9 @@ void setup()
 
     PIDAutotuner tuner = PIDAutotuner();
 
-    tuner.setTargetInputValue(brewTemp); // Example target, adjust as needed
-    tuner.setLoopInterval(250 * 1000);   // Loop interval in microseconds
-    tuner.setOutputRange(0, WindowSize); // Set the output range
+    tuner.setTargetInputValue(brewTemp);
+    tuner.setLoopInterval(250 * 1000);
+    tuner.setOutputRange(0, WindowSize);
     tuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
 
     tuner.startTuningLoop(micros());
@@ -424,6 +424,8 @@ void setup()
 
     myPID.SetTunings(Kp, Ki, Kd);
   }
+
+  Setpoint = brewTemp;
 
   server.begin(); // Makes web server available
 
