@@ -25,7 +25,7 @@ const int THERMO_CLK_PIN = 14;
 const int RELAY_PIN = 16;
 
 // Define variables holding user configured temperatures
-double brewTemp = 105, steamTemp = 170;
+double brewTemp = 95, steamTemp = 165;
 
 // Define Variables we'll be connecting to
 double Setpoint = brewTemp, Input, Output;
@@ -73,7 +73,7 @@ void controlRelay()
   { // Time to shift the Relay Window
     windowStartTime += WindowSize;
   }
-  if (Output > millis() - windowStartTime)
+  if (Output * WindowSize / 100.0 > millis() - windowStartTime)
   {
     digitalWrite(RELAY_PIN, HIGH);
   }
@@ -132,27 +132,6 @@ String buildWebsite()
       "    }"
       "</script>";
 
-  String timerScript =
-    "<script>"
-    "    function updateCountdown() {"
-    "        const heatupDuration = 15 * 60 * 1000;"
-    "        fetch('/getCurrentMillis')"
-    "            .then(response => response.text())"
-    "            .then(currentMillis => {"
-    "                const elapsedMillis = parseInt(currentMillis, 10);"
-    "                if (elapsedMillis >= heatupDuration) {"
-    "                    document.getElementById('loading').style.display = 'none';"
-    "                } else {"
-    "                    const timeLeft = heatupDuration - elapsedMillis;"
-    "                    const minutesLeft = Math.floor(timeLeft / 60000);"
-    "                    document.getElementById('loading').textContent = `Heating Up... (${minutesLeft} min left)`;"
-    "                }"
-    "            })"
-    "    }"
-    "    setInterval(updateCountdown, 10000);"
-    "    updateCountdown();"
-    "</script>";
-
   String htmlPage =
       "<!doctype html>"
       "<head>"
@@ -171,11 +150,10 @@ String buildWebsite()
       "        }"
       "    </style>"
       "    <title>Gaggia Classic</title>" +
-      updateScript + changeScript + timerScript +
+      updateScript + changeScript +
       "</head>"
       "<body>"
       "    <main class='container'>"
-      "        <a id='loading' aria-busy='true'>Heating Up...</a>"
       "        <hgroup>"
       "            <h2>Gaggia Classic</h2>"
       "            <p>" +
@@ -244,11 +222,6 @@ void onConnect()
 void getCurrentTemp()
 {
   server.send(200, "text/plain", String(int(Input)));
-}
-
-void getCurrentMillis()
-{
-  server.send(200, "text/plain", String(millis()));
 }
 
 void setTemps()
@@ -356,7 +329,6 @@ void setup()
   server.on("/getCurrentTemp", getCurrentTemp);
   server.on("/setPID", setPID);
   server.on("/autotune", manualAutotune);
-  server.on("/getCurrentMillis", getCurrentMillis);
   server.onNotFound(notFound);
 
   // Wait for MAX chip to stabilize
@@ -369,12 +341,13 @@ void setup()
     // EEPROM is not initialized or data is corrupted, so set default values
 
     unsigned long lastAutotuneTime = 0;
+    unsigned long autotuneWindowStartTime = micros();
 
     PIDAutotuner tuner = PIDAutotuner();
 
     tuner.setTargetInputValue(brewTemp);
     tuner.setLoopInterval(250 * 1000);
-    tuner.setOutputRange(0, WindowSize);
+    tuner.setOutputRange(0, 100);
     tuner.setZNMode(PIDAutotuner::ZNModeBasicPID);
 
     tuner.startTuningLoop(micros());
@@ -394,8 +367,25 @@ void setup()
         // Tune PID
         Output = tuner.tunePID(Input, currentMicros);
 
-        // Set output
-        controlRelay();
+        // Set output (basically like controlRelay() but in microseconds)
+        // Safety shutdown when temperature is too high
+        if (Input > MaxBoilerTemp)
+        {
+          digitalWrite(RELAY_PIN, LOW);
+        }
+        // Turn the output pin on/off based on pid output
+        if (micros() - autotuneWindowStartTime > WindowSize * 1000)
+        { // Time to shift the Relay Window
+          autotuneWindowStartTime += WindowSize * 1000;
+        }
+        if (Output * WindowSize * 1000 / 100.0 > micros() - autotuneWindowStartTime)
+        {
+          digitalWrite(RELAY_PIN, HIGH);
+        }
+        else
+        {
+          digitalWrite(RELAY_PIN, LOW);
+        }
       }
 
       yield();
@@ -429,8 +419,8 @@ void setup()
 
   server.begin(); // Makes web server available
 
-  // Tell the PID to range between 0 and the full window size
-  myPID.SetOutputLimits(0, WindowSize);
+  // Tell the PID to range between 0 and 100 (percentage)
+  myPID.SetOutputLimits(0, 100);
 
   myPID.SetSampleTime(250);
 
